@@ -45,7 +45,7 @@ func ToRego(cfg Config, i invoker) ([]Function, error) {
 				enc := msgpack.NewEncoder(&buf)
 				enc.UseCompactInts(true)
 
-				if err := marshall(enc, terms, fn.Parameters); err != nil {
+				if err := marshal(enc, terms, fn.Parameters); err != nil {
 					return nil, err
 				}
 
@@ -55,7 +55,7 @@ func ToRego(cfg Config, i invoker) ([]Function, error) {
 				}
 
 				dec := msgpack.NewDecoder(bytes.NewBuffer(res))
-				term, err := unmarshall(dec, fn.Returns[0])
+				term, err := unmarshal(dec, fn.Returns[0])
 				if err != nil {
 					return nil, err
 				}
@@ -67,50 +67,74 @@ func ToRego(cfg Config, i invoker) ([]Function, error) {
 	return funcs, nil
 }
 
-func toRegoType(typ Type) types.Type {
-	switch typ {
+func toRegoType(typ *Type) types.Type {
+	switch typ.Kind {
 	case StringType:
 		return types.S
 	case IntType:
 		return types.N
-	default:
-		return types.A
+	case ArrayType:
+		return types.NewArray(nil, toRegoType(typ.ValueType))
 	}
+
+	panic("unsopported type: " + typ.String())
 }
 
-func marshall(enc *msgpack.Encoder, terms []*ast.Term, argTypes []Type) error {
+func marshal(enc *msgpack.Encoder, terms []*ast.Term, argTypes []*Type) error {
 	for i, typ := range argTypes {
 		arg := terms[i]
-		switch typ {
-		case StringType:
-			astv, err := builtins.StringOperand(arg.Value, arg.Location.Row)
-			if err != nil {
-				return fmt.Errorf("invalid parameter type: %w", err)
-			}
-			if err := enc.EncodeString(string(astv)); err != nil {
-				return fmt.Errorf("failed to encode stirng: %w", err)
-			}
-		case IntType:
-			astv, err := builtins.NumberOperand(arg.Value, arg.Location.Row)
-			if err != nil {
-				return fmt.Errorf("invalid parameter type: %w", err)
-			}
-			num, ok := astv.Int64()
-			if !ok {
-				return fmt.Errorf("failed to convert number %v to int64", astv.String())
-			}
-			if err := enc.EncodeInt32(int32(num)); err != nil {
-				return fmt.Errorf("failed to encode int32: %w", err)
-			}
-		default:
-			return fmt.Errorf("unsopported type: %v", typ)
+		if err := marshalTerm(enc, arg, typ); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func unmarshall(dec *msgpack.Decoder, retType Type) (*ast.Term, error) {
-	switch retType {
+func marshalTerm(enc *msgpack.Encoder, term *ast.Term, typ *Type) error {
+	switch typ.Kind {
+	case StringType:
+		astv, err := builtins.StringOperand(term.Value, term.Location.Row)
+		if err != nil {
+			return fmt.Errorf("invalid parameter type: %w", err)
+		}
+		if err := enc.EncodeString(string(astv)); err != nil {
+			return fmt.Errorf("failed to encode stirng: %w", err)
+		}
+	case IntType:
+		astv, err := builtins.NumberOperand(term.Value, term.Location.Row)
+		if err != nil {
+			return fmt.Errorf("invalid parameter type: %w", err)
+		}
+		num, ok := astv.Int64()
+		if !ok {
+			return fmt.Errorf("failed to convert number %v to int64", astv.String())
+		}
+		if err := enc.EncodeInt32(int32(num)); err != nil {
+			return fmt.Errorf("failed to encode int32: %w", err)
+		}
+	case ArrayType:
+		astv, err := builtins.ArrayOperand(term.Value, term.Location.Row)
+		if err != nil {
+			return fmt.Errorf("invalid parameter type: %w", err)
+		}
+		if err := enc.EncodeArrayLen(astv.Len()); err != nil {
+			return err
+		}
+		for i := range astv.Len() {
+			if err := marshalTerm(enc, astv.Elem(i), typ.ValueType); err != nil {
+				return fmt.Errorf("failed to marshall array element %d: %w", i, err)
+			}
+
+		}
+	default:
+		return fmt.Errorf("unsopported type: %v", typ.String())
+	}
+
+	return nil
+}
+
+func unmarshal(dec *msgpack.Decoder, retType *Type) (*ast.Term, error) {
+	switch retType.Kind {
 	case StringType:
 		v, err := dec.DecodeString()
 		if err != nil {
@@ -123,7 +147,26 @@ func unmarshall(dec *msgpack.Decoder, retType Type) (*ast.Term, error) {
 			return nil, fmt.Errorf("failed to decode string: %w", err)
 		}
 		return ast.IntNumberTerm(int(v)), nil
+	case ArrayType:
+		arraySize, err := dec.DecodeArrayLen()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode array len: %w", err)
+		}
+		elems := make([]*ast.Term, 0, arraySize)
+		for range arraySize {
+			elemVal, err := unmarshal(dec, retType.ValueType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode array element: %w", err)
+			}
+			elems = append(elems, elemVal)
+
+		}
+		return ast.ArrayTerm(elems...), nil
 	default:
-		return nil, fmt.Errorf("unsopported type: %v", retType)
+		return nil, fmt.Errorf("unsopported type: %v", retType.String())
 	}
 }
+
+// func unmarshalTerm(dec *msgpack.Decoder, retType *Type) (*ast.Term, error) {
+
+// }

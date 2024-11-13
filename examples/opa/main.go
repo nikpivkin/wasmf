@@ -32,8 +32,18 @@ func main() {
 		Functions: []FunctionDeclaration{
 			{
 				Name:       "greet",
-				Parameters: []Type{StringType},
-				Returns:    []Type{StringType},
+				Parameters: []*Type{{Kind: StringType}},
+				Returns:    []*Type{{Kind: StringType}},
+			},
+			{
+				Name:       "parse_shell",
+				Parameters: []*Type{{Kind: StringType}},
+				Returns: []*Type{
+					{
+						Kind:      ArrayType,
+						ValueType: &Type{Kind: ArrayType, ValueType: &Type{Kind: StringType}},
+					},
+				},
 			},
 		},
 	}
