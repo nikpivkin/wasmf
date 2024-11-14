@@ -75,6 +75,8 @@ func toRegoType(typ *Type) types.Type {
 		return types.N
 	case ArrayType:
 		return types.NewArray(nil, toRegoType(typ.ValueType))
+	case ObjectType:
+		return types.NewObject(nil, types.NewDynamicProperty(toRegoType(typ.KeyType), toRegoType(typ.ValueType)))
 	}
 
 	panic("unsopported type: " + typ.String())
@@ -126,6 +128,26 @@ func marshalTerm(enc *msgpack.Encoder, term *ast.Term, typ *Type) error {
 			}
 
 		}
+	case ObjectType:
+		astv, err := builtins.ObjectOperand(term.Value, term.Location.Row)
+		if err != nil {
+			return fmt.Errorf("invalid parameter type: %w", err)
+		}
+		if err := enc.EncodeMapLen(astv.Len()); err != nil {
+			return err
+		}
+		if err := astv.Iter(func(t1, t2 *ast.Term) error {
+			if err := marshalTerm(enc, t1, typ.KeyType); err != nil {
+				return fmt.Errorf("failed to marshall key: %w", err)
+			}
+
+			if err := marshalTerm(enc, t2, typ.ValueType); err != nil {
+				return fmt.Errorf("failed to marshall key: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("failed to marshall object property: %w", err)
+		}
 	default:
 		return fmt.Errorf("unsopported type: %v", typ.String())
 	}
@@ -152,16 +174,33 @@ func unmarshal(dec *msgpack.Decoder, retType *Type) (*ast.Term, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode array len: %w", err)
 		}
-		elems := make([]*ast.Term, 0, arraySize)
-		for range arraySize {
+		elems := make([]*ast.Term, arraySize)
+		for i := range arraySize {
 			elemVal, err := unmarshal(dec, retType.ValueType)
 			if err != nil {
 				return nil, fmt.Errorf("failed to decode array element: %w", err)
 			}
-			elems = append(elems, elemVal)
-
+			elems[i] = elemVal
 		}
 		return ast.ArrayTerm(elems...), nil
+	case ObjectType:
+		objSize, err := dec.DecodeMapLen()
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode object len: %w", err)
+		}
+		properties := make([][2]*ast.Term, objSize)
+		for i := range objSize {
+			propKey, err := unmarshal(dec, retType.KeyType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode property key: %w", err)
+			}
+			propVal, err := unmarshal(dec, retType.ValueType)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decode property value: %w", err)
+			}
+			properties[i] = [2]*ast.Term{propKey, propVal}
+		}
+		return ast.ObjectTerm(properties...), nil
 	default:
 		return nil, fmt.Errorf("unsopported type: %v", retType.String())
 	}

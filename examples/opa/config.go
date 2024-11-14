@@ -18,6 +18,7 @@ const (
 	IntType TypeKind = iota
 	StringType
 	ArrayType
+	ObjectType
 )
 
 func (t Type) String() string {
@@ -28,6 +29,8 @@ func (t Type) String() string {
 		return "string"
 	case ArrayType:
 		return "array<" + t.ValueType.String() + ">"
+	case ObjectType:
+		return "object<" + t.KeyType.String() + "," + t.ValueType.String() + ">"
 	}
 	panic("unreachable")
 }

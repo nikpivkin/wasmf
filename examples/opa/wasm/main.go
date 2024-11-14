@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"net/textproto"
 	"strings"
 
 	"github.com/vmihailenco/msgpack/v5"
@@ -11,8 +13,9 @@ import (
 
 func main() {
 	wapc.RegisterFunctions(wapc.Functions{
-		"greet":       greet,
-		"parse_shell": parseShell,
+		"greet":         greet,
+		"parse_shell":   parseShell,
+		"parse_headers": parseHeaders,
 	})
 }
 
@@ -95,4 +98,49 @@ func _parseShell(programm string) ([][]string, error) {
 	})
 
 	return commands, nil
+}
+
+func parseHeaders(payload []byte) ([]byte, error) {
+	dec := msgpack.NewDecoder(bytes.NewBuffer(payload))
+	dec.UsePreallocateValues(false)
+	raw, err := dec.DecodeString()
+	if err != nil {
+		return nil, err
+	}
+	headers, err := _parseHeaders(raw)
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+	enc := msgpack.NewEncoder(&buf)
+	if err := enc.EncodeMapLen(len(headers)); err != nil {
+		return nil, err
+	}
+	for k, v := range headers {
+		if err := enc.EncodeString(k); err != nil {
+			return nil, err
+		}
+		if err := enc.EncodeArrayLen(len(v)); err != nil {
+			return nil, err
+		}
+		for _, vv := range v {
+			if err := enc.EncodeString(vv); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return buf.Bytes(), nil
+}
+
+func _parseHeaders(raw string) (map[string][]string, error) {
+	reader := bufio.NewReader(strings.NewReader(raw + "\r\n"))
+	tp := textproto.NewReader(reader)
+
+	mimeHeader, err := tp.ReadMIMEHeader()
+	if err != nil {
+		return nil, err
+	}
+
+	return mimeHeader, nil
 }

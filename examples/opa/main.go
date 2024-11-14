@@ -45,6 +45,17 @@ func main() {
 					},
 				},
 			},
+			{
+				Name:       "parse_headers",
+				Parameters: []*Type{{Kind: StringType}},
+				Returns: []*Type{
+					{
+						Kind:      ObjectType,
+						KeyType:   &Type{Kind: StringType},
+						ValueType: &Type{Kind: ArrayType, ValueType: &Type{Kind: StringType}},
+					},
+				},
+			},
 		},
 	}
 
