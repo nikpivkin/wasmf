@@ -7,18 +7,18 @@ import (
 )
 
 type Type struct {
-	Kind      TypeKind `json:"kind"`
-	KeyType   *Type    `json:"key_type"`  // map
-	ValueType *Type    `json:"elem_type"` // collection
+	Kind      TypeKind `yaml:"kind"`
+	KeyType   *Type    `yaml:"key_type"`  // map
+	ValueType *Type    `yaml:"elem_type"` // collection
 }
 
-type TypeKind int
+type TypeKind string
 
 const (
-	IntType TypeKind = iota
-	StringType
-	ArrayType
-	ObjectType
+	IntType    TypeKind = "int"
+	StringType TypeKind = "string"
+	ArrayType  TypeKind = "array"
+	ObjectType TypeKind = "object"
 )
 
 func (t Type) String() string {
